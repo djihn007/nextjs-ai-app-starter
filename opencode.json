@@ -8,5 +8,12 @@
       "git commit *": "ask",
       "rm *": "ask"
     }
+  },
+  "mcp": {
+    "next-devtools-mcp": {
+      "type": "local",
+      "command": ["npx", "-y", "next-devtools-mcp@latest"],
+      "enabled": true
+    }
   }
 }
