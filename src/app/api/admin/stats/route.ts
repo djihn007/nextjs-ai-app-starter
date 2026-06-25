@@ -1,18 +1,13 @@
 import { NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
+import { getAdminSession } from "@/lib/auth-session"
 import prisma from "@/lib/prisma"
 
 export async function GET() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session || session.user.role !== "admin") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
-  }
-
   const todayStart = new Date()
   todayStart.setHours(0, 0, 0, 0)
 
-  const [todayOrdersResult, totalProducts, totalUsers] = await Promise.all([
+  const [session, todayOrdersResult, totalProducts, totalUsers] = await Promise.all([
+    getAdminSession(),
     prisma.orders.findMany({
       where: { date: { gte: todayStart } },
       select: { total_amount: true, status: true },
@@ -20,6 +15,10 @@ export async function GET() {
     prisma.products.count(),
     prisma.user.count(),
   ])
+
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
+  }
 
   const todayOrders = todayOrdersResult.length
   const todaySales = todayOrdersResult.reduce(

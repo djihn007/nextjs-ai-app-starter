@@ -1,8 +1,7 @@
 "use client"
 
-/* eslint-disable react-hooks/set-state-in-effect */
-
-import { useEffect, useState, useCallback } from "react"
+import { useState } from "react"
+import useSWR, { useSWRConfig } from "swr"
 import dynamic from "next/dynamic"
 import { RiMoneyDollarCircleLine, RiShoppingBag3Line, RiTimerLine, RiDatabase2Line, RiUserLine } from "@remixicon/react"
 import { KpiCard } from "@/components/admin/kpi-card"
@@ -10,6 +9,7 @@ import { PeriodSelector } from "@/components/admin/period-selector"
 import { RecentOrdersTable } from "@/components/admin/recent-orders-table"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { fetcher } from "@/lib/fetcher"
 import type { AdminStats, RevenuePoint, AdminOrderItem } from "@/types/admin"
 
 const RevenueChart = dynamic(
@@ -19,77 +19,28 @@ const RevenueChart = dynamic(
 
 type Period = "7d" | "30d" | "90d"
 
+const currencyFormat = new Intl.NumberFormat("th-TH", { style: "currency", currency: "THB" })
+
 export default function DashboardClient() {
-  const [stats, setStats] = useState<AdminStats | null>(null)
-  const [statsLoading, setStatsLoading] = useState(true)
-  const [statsError, setStatsError] = useState<string | null>(null)
-
-  const [revenue, setRevenue] = useState<RevenuePoint[]>([])
-  const [revenueLoading, setRevenueLoading] = useState(true)
   const [period, setPeriod] = useState<Period>("30d")
+  const { mutate } = useSWRConfig()
 
-  const [orders, setOrders] = useState<AdminOrderItem[]>([])
-  const [ordersLoading, setOrdersLoading] = useState(true)
+  const { data: stats, error: statsError, isLoading: statsLoading } = useSWR<AdminStats>("/api/admin/stats", fetcher, {
+    refreshInterval: 30_000,
+    dedupingInterval: 10_000,
+  })
 
-  const fetchStats = useCallback(async () => {
-    setStatsError(null)
-    try {
-      const res = await fetch("/api/admin/stats")
-      if (!res.ok) throw new Error("Failed to fetch stats")
-      const data: AdminStats = await res.json()
-      setStats(data)
-    } catch {
-      setStatsError("ไม่สามารถโหลดข้อมูลสถิติได้")
-    } finally {
-      setStatsLoading(false)
-    }
-  }, [])
+  const { data: revenue = [], isLoading: revenueLoading } = useSWR<RevenuePoint[]>(
+    `/api/admin/revenue?period=${period}`,
+    fetcher,
+    { dedupingInterval: 10_000 }
+  )
 
-  const fetchRevenue = useCallback(async (p: Period) => {
-    setRevenueLoading(true)
-    try {
-      const res = await fetch(`/api/admin/revenue?period=${p}`)
-      if (res.ok) {
-        const data: RevenuePoint[] = await res.json()
-        setRevenue(data)
-      }
-    } finally {
-      setRevenueLoading(false)
-    }
-  }, [])
-
-  const fetchOrders = useCallback(async () => {
-    setOrdersLoading(true)
-    try {
-      const res = await fetch("/api/admin/orders?limit=5")
-      if (res.ok) {
-        const data = await res.json()
-        setOrders(data.orders)
-      }
-    } finally {
-      setOrdersLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchStats()
-    fetchOrders()
-  }, [fetchStats, fetchOrders])
-
-  useEffect(() => {
-    fetchRevenue(period)
-  }, [period, fetchRevenue])
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchStats()
-      fetchOrders()
-    }, 30_000)
-    return () => clearInterval(interval)
-  }, [fetchStats, fetchOrders])
-
-  const priceFormat = (n: number) =>
-    new Intl.NumberFormat("th-TH", { style: "currency", currency: "THB" }).format(n)
+  const { data: ordersData } = useSWR<{ orders: AdminOrderItem[]; total: number }>(
+    "/api/admin/orders?limit=5",
+    fetcher,
+    { refreshInterval: 30_000, dedupingInterval: 10_000 }
+  )
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-6">
@@ -100,8 +51,12 @@ export default function DashboardClient() {
 
       {statsError && (
         <div className="flex items-center gap-3 rounded-lg border border-[#FECDD3] bg-[#FFF1F2] p-4 text-sm text-[#BE123C]">
-          <span>{statsError}</span>
-          <Button size="sm" variant="destructive" onClick={() => { setStatsLoading(true); fetchStats(); }}>
+          <span>ไม่สามารถโหลดข้อมูลสถิติได้</span>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={() => mutate("/api/admin/stats")}
+          >
             ลองใหม่
           </Button>
         </div>
@@ -110,7 +65,7 @@ export default function DashboardClient() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <KpiCard
           title="ยอดขายวันนี้"
-          value={stats ? priceFormat(stats.todaySales) : "-"}
+          value={stats ? currencyFormat.format(stats.todaySales) : "-"}
           loading={statsLoading}
           icon={<RiMoneyDollarCircleLine className="size-6" />}
         />
@@ -156,7 +111,7 @@ export default function DashboardClient() {
           <CardTitle>คำสั่งซื้อล่าสุด</CardTitle>
         </CardHeader>
         <CardContent>
-          <RecentOrdersTable orders={orders} loading={ordersLoading} />
+          <RecentOrdersTable orders={ordersData?.orders ?? []} loading={!ordersData} />
         </CardContent>
       </Card>
     </div>

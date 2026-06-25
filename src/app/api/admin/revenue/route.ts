@@ -1,14 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
+import { getAdminSession } from "@/lib/auth-session"
 import prisma from "@/lib/prisma"
 
 export async function GET(request: NextRequest) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session || session.user.role !== "admin") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
-  }
-
   const { searchParams } = new URL(request.url)
   const period = searchParams.get("period") ?? "30d"
 
@@ -17,11 +11,18 @@ export async function GET(request: NextRequest) {
   since.setDate(since.getDate() - days)
   since.setHours(0, 0, 0, 0)
 
-  const orders = await prisma.orders.findMany({
-    where: { date: { gte: since } },
-    select: { date: true, total_amount: true },
-    orderBy: { date: "asc" },
-  })
+  const [session, orders] = await Promise.all([
+    getAdminSession(),
+    prisma.orders.findMany({
+      where: { date: { gte: since } },
+      select: { date: true, total_amount: true },
+      orderBy: { date: "asc" },
+    }),
+  ])
+
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
+  }
 
   const grouped = new Map<string, { revenue: number; orders: number }>()
 

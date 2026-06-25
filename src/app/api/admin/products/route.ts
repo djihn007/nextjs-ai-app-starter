@@ -1,17 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
+import { getAdminSession } from "@/lib/auth-session"
 import prisma from "@/lib/prisma"
 import { productSchema } from "@/lib/validations/product"
 
 const PAGE_SIZE = 10
 
 export async function GET(request: NextRequest) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session || session.user.role !== "admin") {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
-  }
-
   const { searchParams } = new URL(request.url)
   const search = searchParams.get("search") || ""
   const page = Math.max(1, Number(searchParams.get("page")) || 1)
@@ -21,7 +15,8 @@ export async function GET(request: NextRequest) {
     ? { name: { contains: search } }
     : undefined
 
-  const [products, total] = await Promise.all([
+  const [session, products, total] = await Promise.all([
+    getAdminSession(),
     prisma.products.findMany({
       where,
       skip,
@@ -31,6 +26,10 @@ export async function GET(request: NextRequest) {
     }),
     prisma.products.count({ where }),
   ])
+
+  if (!session) {
+    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
+  }
 
   const serialized = products.map((p) => ({
     id: String(p.id),
@@ -48,12 +47,15 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session || session.user.role !== "admin") {
+  const [session, body] = await Promise.all([
+    getAdminSession(),
+    request.json(),
+  ])
+
+  if (!session) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
   }
 
-  const body = await request.json()
   const result = productSchema.safeParse(body)
 
   if (!result.success) {

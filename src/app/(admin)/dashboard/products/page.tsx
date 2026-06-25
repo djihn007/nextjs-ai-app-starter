@@ -1,13 +1,12 @@
 import { Suspense } from "react"
 import { redirect } from "next/navigation"
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
+import { getAdminSession } from "@/lib/auth-session"
 import ProductsClient from "./products-client"
 
 async function AuthGate() {
-  const session = await auth.api.getSession({ headers: await headers() })
+  const session = await getAdminSession()
 
-  if (!session || session.user.role !== "admin") {
+  if (!session) {
     redirect("/")
   }
 

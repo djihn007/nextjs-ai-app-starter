@@ -1,18 +1,19 @@
 import { NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
+import { getAdminSession } from "@/lib/auth-session"
 import prisma from "@/lib/prisma"
 
 export async function GET() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session || session.user.role !== "admin") {
+  const [session, categories] = await Promise.all([
+    getAdminSession(),
+    prisma.categories.findMany({
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+  ])
+
+  if (!session) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
   }
-
-  const categories = await prisma.categories.findMany({
-    select: { id: true, name: true },
-    orderBy: { name: "asc" },
-  })
 
   return NextResponse.json({
     success: true,

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
+import { getAdminSession } from "@/lib/auth-session"
 import prisma from "@/lib/prisma"
 import { productSchema } from "@/lib/validations/product"
 
@@ -9,13 +8,16 @@ interface RouteParams {
 }
 
 export async function PUT(request: NextRequest, { params }: RouteParams) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session || session.user.role !== "admin") {
+  const [session, { id }, body] = await Promise.all([
+    getAdminSession(),
+    params,
+    request.json(),
+  ])
+
+  if (!session) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
   }
 
-  const { id } = await params
-  const body = await request.json()
   const result = productSchema.safeParse(body)
 
   if (!result.success) {
@@ -52,12 +54,15 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 }
 
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session || session.user.role !== "admin") {
+  const [session, { id }] = await Promise.all([
+    getAdminSession(),
+    params,
+  ])
+
+  if (!session) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
   }
 
-  const { id } = await params
   const pid = parseInt(id)
 
   const count = await prisma.order_items.count({ where: { product_id: pid } })
